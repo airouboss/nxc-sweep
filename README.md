@@ -15,7 +15,7 @@ A bash wrapper for [NetExec](https://github.com/Pennyw0rth/NetExec) that sweeps 
 ## Install
 
 ```bash
-curl -sSL 'https://raw.githubusercontent.com/YOUR_USERNAME/nxc-sweep/main/nxc-sweep' -o nxc-sweep && chmod +x nxc-sweep && sudo mv nxc-sweep /usr/local/bin/
+curl -sSL 'https://raw.githubusercontent.com/airouboss/nxc-sweep/main/nxc-sweep' -o nxc-sweep && chmod +x nxc-sweep && sudo mv nxc-sweep /usr/local/bin/
 ```
 
 ---
