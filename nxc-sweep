@@ -1,0 +1,121 @@
+#!/bin/bash
+# --- Colors ---
+BLUE='\033[0;34m'
+YELLOW='\033[38;5;226m'
+GREEN='\033[0;32m'
+GREY='\033[38;5;244m'
+
+# --- Help Menu ---
+usage() {
+    echo -e "${YELLOW}Usage: nxc-sweep <IP> -u <username> -p <password> [global flags]"
+    echo -e "${YELLOW}       nxc-sweep <IP> --no-auth [global flags]"
+    exit 1
+}
+
+# pulls IP first like in native nxc syntax
+if [[ -z "$1" || "$1" == -* ]]; then
+    usage
+fi
+TARGET=$1
+shift
+
+# --- Defaults ---
+ANON_MODE=false
+USER=""
+PASS=""
+GLOBAL_FLAGS=()
+
+# parses the remaining flags
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -u) USER=$2; shift 2 ;;
+        -p) PASS=$2; shift 2 ;;
+        --no-auth) ANON_MODE=true; shift 1 ;;
+        *) GLOBAL_FLAGS+=("$1"); shift 1 ;;
+    esac
+done
+
+# validation check
+if [[ "$ANON_MODE" == false ]] && [[ -z "$USER" || -z "$PASS" ]]; then
+    usage
+fi
+
+# set creds based on mode
+if [[ "$ANON_MODE" == true ]]; then
+    USER=""
+    PASS=""
+    echo -e "${BLUE}[*] Starting NXC sweep for $TARGET in no-auth mode ...\n"
+else
+    echo -e "${BLUE}[*] Starting NXC sweep for $TARGET as $USER ...\n"
+fi
+
+# --- Protocol Handler ---
+check_and_run() {
+    local PORT=$1
+    local PROTO=$2
+    shift 2
+
+    if nc -z -w 1 "$TARGET" "$PORT" 2>/dev/null; then
+        echo -e "${GREEN}[+] Port $PORT open. Checking ${PROTO} ..."
+
+        local EXTRA_FLAGS=("$@")
+        local SAFE_GLOBAL_FLAGS=()
+
+        for flag in "${GLOBAL_FLAGS[@]}"; do
+            if [[ "$PROTO" == "ftp" && "$flag" == "--local-auth" ]]; then
+                continue
+            fi
+            if [[ "$PROTO" == "ldap" && "$flag" == "--local-auth" ]]; then
+                continue
+            fi
+            if [[ "$PROTO" == "ipmi" && "$flag" == "--local-auth" ]]; then
+                continue
+            fi
+            if [[ "$PROTO" == "wmi" && "$flag" == "--local-auth" ]]; then
+                continue
+            fi
+            if [[ "$PROTO" == "vnc" && "$flag" == "--local-auth" ]]; then
+                continue
+            fi
+            SAFE_GLOBAL_FLAGS+=("$flag")
+        done
+
+        nxc "$PROTO" "$TARGET" -u "$USER" -p "$PASS" "${SAFE_GLOBAL_FLAGS[@]}" "${EXTRA_FLAGS[@]}"
+    else
+        echo -e "${GREY}[-] Port $PORT closed/filtered. Skipping ${PROTO}"
+    fi
+    echo ""
+}
+
+# --- SMB Vuln Sweep (no-auth mode only) ---
+smb_vuln_sweep() {
+    if nc -z -w 1 "$TARGET" 445 2>/dev/null; then
+        echo -e "${GREEN}[+] Port 445 open. Running SMB vuln modules ..."
+        nxc smb "$TARGET" -u '' -p '' -M zerologon -M ms17-010 -M smbghost -M printnightmare
+    fi
+    echo ""
+}
+
+# --- Protocols ---
+check_and_run 445  "smb"      "--shares"
+check_and_run 139  "smb"      "--shares"
+check_and_run 5985 "winrm"
+check_and_run 3389 "rdp"      "--no-bruteforce"
+check_and_run 1433 "mssql"    -q "SELECT name FROM master.sys.databases;"
+check_and_run 21   "ftp"      "--ls"
+check_and_run 22   "ssh"
+check_and_run 389  "ldap"     "--users" "--password-not-required"
+check_and_run 5432 "postgres"
+check_and_run 3306 "mysql"
+check_and_run 623  "ipmi"
+check_and_run 80   "http"
+check_and_run 443  "https"
+check_and_run 135  "wmi"
+check_and_run 5900 "vnc"
+
+# run vuln sweep on top of standard SMB check in no-auth mode
+if [[ "$ANON_MODE" == true ]]; then
+    smb_vuln_sweep
+fi
+
+echo -e "${BLUE}[*] All active services checked."
