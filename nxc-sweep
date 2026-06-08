@@ -4,10 +4,12 @@ BLUE='\033[0;34m'
 YELLOW='\033[38;5;226m'
 GREEN='\033[0;32m'
 GREY='\033[38;5;244m'
+RED='\033[0;31m'
 
 # --- Help Menu ---
 usage() {
     echo -e "${YELLOW}Usage: nxc-sweep <IP> -u <username> -p <password> [global flags]"
+    echo -e "${YELLOW}       nxc-sweep <IP> -u users.txt -p passwords.txt [global flags]"
     echo -e "${YELLOW}       nxc-sweep <IP> --no-auth [global flags]"
     exit 1
 }
@@ -21,6 +23,7 @@ shift
 
 # --- Defaults ---
 ANON_MODE=false
+SPRAY_MODE=false
 USER=""
 PASS=""
 GLOBAL_FLAGS=()
@@ -40,11 +43,19 @@ if [[ "$ANON_MODE" == false ]] && [[ -z "$USER" || -z "$PASS" ]]; then
     usage
 fi
 
-# set creds based on mode
+# --- Auto-detect spray mode if files are passed ---
+if [[ -f "$USER" || -f "$PASS" ]]; then
+    SPRAY_MODE=true
+    GLOBAL_FLAGS+=("--no-bruteforce" "--continue-on-success")
+fi
+
+# --- Mode Banner ---
 if [[ "$ANON_MODE" == true ]]; then
     USER=""
     PASS=""
     echo -e "${BLUE}[*] Starting NXC sweep for $TARGET in no-auth mode ...\n"
+elif [[ "$SPRAY_MODE" == true ]]; then
+    echo -e "${RED}[*] Spray mode detected. Using --no-bruteforce and --continue-on-success ...\n"
 else
     echo -e "${BLUE}[*] Starting NXC sweep for $TARGET as $USER ...\n"
 fi
@@ -75,6 +86,10 @@ check_and_run() {
                 continue
             fi
             if [[ "$PROTO" == "vnc" && "$flag" == "--local-auth" ]]; then
+                continue
+            fi
+            # strip --no-bruteforce from protocols that don't support it
+            if [[ "$PROTO" != "rdp" && "$PROTO" != "ssh" && "$PROTO" != "vnc" && "$flag" == "--no-bruteforce" ]]; then
                 continue
             fi
             SAFE_GLOBAL_FLAGS+=("$flag")
